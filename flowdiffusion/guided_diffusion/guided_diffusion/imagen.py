@@ -322,8 +322,8 @@ class PerceiverResampler(nn.Module):
     def __init__(
         self,
         *,
-        dim,
-        depth,
+        dim, # 512
+        depth, # 2
         dim_head = 64,
         heads = 8,
         num_latents = 64,
@@ -368,7 +368,7 @@ class PerceiverResampler(nn.Module):
         for attn, ff in self.layers:
             latents = attn(x_with_pos, latents, mask = mask) + latents
             latents = ff(latents) + latents
-
+        
         return latents
 
 # main contribution from make-a-video - pseudo conv3d

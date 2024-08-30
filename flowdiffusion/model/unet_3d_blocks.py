@@ -16,9 +16,8 @@ import torch
 from torch import nn
 
 from .resnet import Downsample2D, ResnetBlock2D, TemporalConvLayer, Upsample2D
-from diffusers.models.transformer_2d import Transformer2DModel
 from .transformer_temporal import TransformerTemporalModel
-
+from diffusers.models.transformers.transformer_2d import Transformer2DModel
 
 def get_down_block(
     down_block_type,

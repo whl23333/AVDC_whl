@@ -1,14 +1,21 @@
-from goal_diffusion import GoalGaussianDiffusion, Trainer
+from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder
 from unet import UnetMW as Unet
+from unet import NewUnetMW as NewUnet
 from transformers import CLIPTextModel, CLIPTokenizer
 from datasets import SequentialDatasetv2
 from torch.utils.data import Subset
 import argparse
-
-
+from ImgTextPerceiver import ImgTextPerceiverModel, ConvImgTextPerceiverModel, TwoStagePerceiverModel
+from torchvision import utils
+import os
+import yaml
 def main(args):
-    valid_n = 1
-    sample_per_seq = 8
+    current_dir = os.path.dirname(__file__)
+    config_path = os.path.join(current_dir, '../configs/config.yaml')
+    with open(config_path, "r") as file:
+        cfg = yaml.safe_load(file)
+    valid_n = cfg["valid_n"]
+    sample_per_seq = cfg["sample_per_seq"]
     target_size = (128, 128)
 
     if args.mode == 'inference':
@@ -16,7 +23,7 @@ def main(args):
     else:
         train_set = SequentialDatasetv2(
             sample_per_seq=sample_per_seq, 
-            path="../datasets/metaworld", 
+            path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
             target_size=target_size,
             randomcrop=True
         )
@@ -31,6 +38,7 @@ def main(args):
     text_encoder.requires_grad_(False)
     text_encoder.eval()
 
+    # diffusion
     diffusion = GoalGaussianDiffusion(
         channels=3*(sample_per_seq-1),
         model=unet,
@@ -43,28 +51,71 @@ def main(args):
         min_snr_loss_weight = True,
     )
 
+    # implicit_model
+    model_name = cfg["models"]["implicit_model"]["model_name"]
+    model_params = cfg["models"]["implicit_model"]["params"]
+    class_ = globals()[model_name]
+    implicit_model = class_(**model_params)
+    
+    # action_decoder
+    model_name = cfg["models"]["action_decoder"]["model_name"]
+    model_params = cfg["models"]["action_decoder"]["params"]
+    class_ = globals()[model_name]
+    action_decoder = class_(**model_params)
+
+    # condition_model
+    condition_model = ConditionModel()
+
+    # preprocess
+    model_name = cfg["models"]["preprocess"]["model_name"]
+    model_params = cfg["models"]["preprocess"]["params"]
+    class_ = globals()[model_name]
+    preprocess = class_(**model_params)
+
+    # 冻结参数
+    if cfg["freeze"]["implicit_model"]:
+        implicit_model.requires_grad_(False)
+        implicit_model.eval()
+    
+    if cfg["freeze"]["action_decoder"]:
+        action_decoder.requires_grad_(False)
+        action_decoder.eval()
+
+    if cfg["freeze"]["diffusion"]:
+        diffusion.requires_grad_(False)
+        diffusion.eval()
+
+    diffusion_action_model11 = DiffusionActionModel(
+        diffusion,
+        implicit_model,
+        action_decoder,
+        condition_model,
+        preprocess,
+        action_rate = cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+    )
+
     trainer = Trainer(
-        diffusion_model=diffusion,
+        diffusion_action_model=diffusion_action_model11,
         tokenizer=tokenizer, 
         text_encoder=text_encoder,
         train_set=train_set,
         valid_set=valid_set,
         train_lr=1e-4,
-        train_num_steps =60000,
-        save_and_sample_every =2500,
+        train_num_steps = 240000,
+        save_and_sample_every = 10000,
         ema_update_every = 10,
         ema_decay = 0.999,
-        train_batch_size =16,
+        train_batch_size = cfg["trainer"]["train_batch_size"],
         valid_batch_size =32,
         gradient_accumulate_every = 1,
         num_samples=valid_n, 
-        results_folder ='../results/mw',
+        results_folder =cfg["trainer"]["results_folder"],
         fp16 =True,
         amp=True,
     )
 
     if args.checkpoint_num is not None:
-        trainer.load(args.checkpoint_num)
+        trainer.load_resume(args.checkpoint_num) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     if args.mode == 'train':
         trainer.train()
@@ -90,6 +141,8 @@ def main(args):
         output = torch.cat([image.unsqueeze(0), output], dim=0)
         root, ext = splitext(args.inference_path)
         output_gif = root + '_out.gif'
+        output_png = root + '_out.png'
+        utils.save_image(output, output_png, nrow=8)
         output = (output.cpu().numpy().transpose(0, 2, 3, 1).clip(0, 1) * 255).astype('uint8')
         imageio.mimsave(output_gif, output, duration=200, loop=1000)
         print(f'Generated {output_gif}')

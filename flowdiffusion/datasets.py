@@ -11,6 +11,8 @@ import torchvision.transforms as T
 import random
 from torchvideotransforms import video_transforms, volume_transforms
 from einops import rearrange
+import pandas as pd
+import torch
 # from vidaug import augmentors as va
 
 random.seed(0)
@@ -243,6 +245,14 @@ class MySeqDatasetMW(SequentialDataset):
         ])
         print("Done")
 
+
+def accumulate(action_list):
+    action_accumulate_list = []
+    for i in range(len(action_list)):
+        xyz = np.delete(np.add.reduce(action_list[0:i+1]),3)
+        action_accumulate_list.append(np.append(xyz, action_list[i][3]))
+    return action_accumulate_list
+
 ### Randomly sample, from any intermediate to the last frame
 # included_tasks = ["door-open", "door-close", "basketball", "shelf-place", "button-press", "button-press-topdown", "faucet-close", "faucet-open", "handle-press", "hammer", "assembly"]
 # included_idx = [i for i in range(5)]
@@ -256,14 +266,21 @@ class SequentialDatasetv2(Dataset):
         sequence_dirs = glob(f"{path}/**/metaworld_dataset/*/*/*/", recursive=True)
         self.tasks = []
         self.sequences = []
+        self.actions = []
         for seq_dir in sequence_dirs:
-            task = seq_dir.split("/")[-4]
-            seq_id= int(seq_dir.split("/")[-2])
+            task = seq_dir.split("/")[-4] # "assembly"
+            seq_id= int(seq_dir.split("/")[-2]) # 0
             # if task not in included_tasks or seq_id not in included_idx:
             #     continue
             seq = sorted(glob(f"{seq_dir}*.png"), key=lambda x: int(x.split("/")[-1].rstrip(".png")))
+            action = pd.read_pickle(os.path.join(seq_dir, "action.pkl"))
+            action = action[seq_id]
+            if len(action) != len(seq):
+                action.append(np.array([0.0, 0.0, 0.0, action[len(action)-1][3]]))
+            
             self.sequences.append(seq)
             self.tasks.append(seq_dir.split("/")[-4].replace("-", " "))
+            self.actions.append(action)
     
         if randomcrop:
             self.transform = video_transforms.Compose([
@@ -281,11 +298,14 @@ class SequentialDatasetv2(Dataset):
         print("Done")
 
     def get_samples(self, idx):
-        seq = self.sequences[idx]
+        seq = self.sequences[idx] # 取某一个目录下的所有图片
+        action = self.actions[idx]
         # if frameskip is not given, do uniform sampling betweeen a random frame and the last frame
-        if self.frame_skip is None:
-            start_idx = random.randint(0, len(seq)-1)
+        if self.frame_skip is None: #随机顺序选取某一个任务下的8张图片，8张图片之间不一定紧挨着对方
+            # start_idx = random.randint(0, len(seq)-8)
+            start_idx = 0
             seq = seq[start_idx:]
+            action = action[start_idx:]
             N = len(seq)
             samples = []
             for i in range(self.sample_per_seq-1):
@@ -294,19 +314,35 @@ class SequentialDatasetv2(Dataset):
         else:
             start_idx = random.randint(0, len(seq)-1)
             samples = [i if i < len(seq) else -1 for i in range(start_idx, start_idx+self.frame_skip*self.sample_per_seq, self.frame_skip)]
-        return [seq[i] for i in samples]
+        
+        action_sample_seq = []
+        if N < self.sample_per_seq:
+            for i in range(self.sample_per_seq-1):
+                if samples[i] < samples [i+1]:
+                    action_sample_seq.append(action[samples[i]])
+                else:
+                    action_sample_seq.append(np.array([0.0, 0.0, 0.0, action[samples[i]][3]]))
+        else:
+            for i in range(self.sample_per_seq-1):
+                a = np.add.reduce(action[samples[i]:samples[i+1]])
+                a[3] = action[samples[i+1]-1][3]
+                action_sample_seq.append(a)
+            
+        return [seq[i] for i in samples], action_sample_seq
     
     def __len__(self):
-        return len(self.sequences)
+        return len(self.sequences) # 一共有多少种任务
     
     def __getitem__(self, idx):
         try:
-            samples = self.get_samples(idx)
+            samples, actions = self.get_samples(idx)
+            actions = np.array(actions)
+            actions = torch.tensor(actions)
             images = self.transform([Image.open(s) for s in samples]) # [c f h w]
-            x_cond = images[:, 0] # first frame
+            x_cond = images[:, 0] # first frame 选取8张图片中的第一张作为条件
             x = rearrange(images[:, 1:], "c f h w -> (f c) h w") # all other frames
             task = self.tasks[idx]
-            return x, x_cond, task
+            return x, x_cond, task, actions # x.shape: (3*7, 128, 128), x_cond.shape: (3, 128, 128), task: 'assembly'
         except Exception as e:
             print(e)
             return self.__getitem__(idx + 1 % self.__len__()) 
