@@ -302,8 +302,7 @@ class SequentialDatasetv2(Dataset):
         action = self.actions[idx]
         # if frameskip is not given, do uniform sampling betweeen a random frame and the last frame
         if self.frame_skip is None: #随机顺序选取某一个任务下的8张图片，8张图片之间不一定紧挨着对方
-            # start_idx = random.randint(0, len(seq)-8)
-            start_idx = 0
+            start_idx = random.randint(0, len(seq)-8)
             seq = seq[start_idx:]
             action = action[start_idx:]
             N = len(seq)
