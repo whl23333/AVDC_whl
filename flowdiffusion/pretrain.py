@@ -8,7 +8,7 @@ import tqdm
 from omegaconf import OmegaConf
 from vqvae.vqvae import VqVae
 import wandb
-from datasets import SequentialDatasetv2
+from datasets import SequentialDatasetv2, SequentialDatasetv2SameInterval
 from torch.utils.data import Subset
 from torch.utils.data import DataLoader
 import yaml
@@ -48,10 +48,18 @@ def main(cfg):
     )
     seed_everything(cfg["seed"])
 
-    train_set = SequentialDatasetv2(
+    # train_set = SequentialDatasetv2(
+    #         sample_per_seq=cfg["sample_per_seq"], 
+    #         path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
+    #         target_size=(128, 128),
+    #         randomcrop=True
+    #     )
+    
+    train_set = SequentialDatasetv2SameInterval(
             sample_per_seq=cfg["sample_per_seq"], 
             path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
             target_size=(128, 128),
+            frameskip=8,
             randomcrop=True
         )
     valid_n = cfg["valid_n"]

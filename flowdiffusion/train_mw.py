@@ -1,8 +1,8 @@
-from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder
+from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder, DiffusionActionModelWithGPT
 from unet import UnetMW as Unet
 from unet import NewUnetMW as NewUnet
 from transformers import CLIPTextModel, CLIPTokenizer
-from datasets import SequentialDatasetv2
+from datasets import SequentialDatasetv2, SequentialDatasetv2SameInterval
 from torch.utils.data import Subset
 import argparse
 from ImgTextPerceiver import ImgTextPerceiverModel, ConvImgTextPerceiverModel, TwoStagePerceiverModel
@@ -21,16 +21,25 @@ def main(args):
     if args.mode == 'inference':
         train_set = valid_set = [None] # dummy
     else:
-        train_set = SequentialDatasetv2(
+        # train_set = SequentialDatasetv2(
+        #     sample_per_seq=sample_per_seq, 
+        #     path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
+        #     target_size=target_size,
+        #     randomcrop=True
+        # )
+
+        train_set = SequentialDatasetv2SameInterval(
             sample_per_seq=sample_per_seq, 
             path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
             target_size=target_size,
+            frameskip=8,
             randomcrop=True
         )
         valid_inds = [i for i in range(0, len(train_set), len(train_set)//valid_n)][:valid_n]
         valid_set = Subset(train_set, valid_inds)
 
     unet = Unet()
+    new_unet = NewUnet()
 
     pretrained_model = "openai/clip-vit-base-patch32"
     tokenizer = CLIPTokenizer.from_pretrained(pretrained_model)
@@ -50,7 +59,18 @@ def main(args):
         beta_schedule = 'cosine',
         min_snr_loss_weight = True,
     )
-
+    
+    diffusion_new = GoalGaussianDiffusion(
+        channels=3*(sample_per_seq-1),
+        model=new_unet,
+        image_size=target_size,
+        timesteps=100,
+        sampling_timesteps=args.sample_steps,
+        loss_type='l2',
+        objective='pred_v',
+        beta_schedule = 'cosine',
+        min_snr_loss_weight = True,
+    )
     # implicit_model
     model_name = cfg["models"]["implicit_model"]["model_name"]
     model_params = cfg["models"]["implicit_model"]["params"]
@@ -94,8 +114,37 @@ def main(args):
         action_rate = cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
     )
 
+    diffusion_action_model_gpt = DiffusionActionModelWithGPT(
+        diffusion_new,
+        action_decoder,
+        condition_model,
+        action_rate = cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer = 12,
+        n_head = 4
+    )
+
+    # trainer = Trainer(
+    #     diffusion_action_model=diffusion_action_model11,
+    #     tokenizer=tokenizer, 
+    #     text_encoder=text_encoder,
+    #     train_set=train_set,
+    #     valid_set=valid_set,
+    #     train_lr=1e-4,
+    #     train_num_steps = 240000,
+    #     save_and_sample_every = 10000,
+    #     ema_update_every = 10,
+    #     ema_decay = 0.999,
+    #     train_batch_size = cfg["trainer"]["train_batch_size"],
+    #     valid_batch_size =32,
+    #     gradient_accumulate_every = 1,
+    #     num_samples=valid_n, 
+    #     results_folder =cfg["trainer"]["results_folder"],
+    #     fp16 =True,
+    #     amp=True,
+    # )
+
     trainer = Trainer(
-        diffusion_action_model=diffusion_action_model11,
+        diffusion_action_model=diffusion_action_model_gpt,
         tokenizer=tokenizer, 
         text_encoder=text_encoder,
         train_set=train_set,

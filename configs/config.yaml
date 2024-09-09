@@ -3,7 +3,7 @@ wandb:
   wandb_entity: "whl23333-tsinghua-university"
 
 save_path: "../results12/pretrain"
-
+gpt_save_path: "../results12/gpt"
 seed: 42
 sample_per_seq: 8
 valid_n: 1
@@ -41,7 +41,7 @@ models:
   action_decoder:
     model_name: "PretrainDecoder"
     params:
-      dir: "../results12/pretrain/crisp-durian-8"
+      dir: "../results12/pretrain/true-cosmos-49"
       device: "cuda"
   preprocess:
     model_name: "Preprocess"
@@ -54,5 +54,5 @@ models:
       action_rate: 0.5
 
 trainer:
-  results_folder: '../result5/mw'
+  results_folder: '../result_gpt/mw'
   train_batch_size: 3
