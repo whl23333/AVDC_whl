@@ -59,7 +59,7 @@ def main(cfg):
             sample_per_seq=cfg["sample_per_seq"], 
             path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
             target_size=(128, 128),
-            frameskip=8,
+            frameskip=cfg["frameskip"],
             randomcrop=True
         )
     valid_n = cfg["valid_n"]

@@ -1,4 +1,4 @@
-from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder, DiffusionActionModelWithGPT
+from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder, DiffusionActionModelWithGPT, DiffusionActionModelWithGPT2
 from unet import UnetMW as Unet
 from unet import NewUnetMW as NewUnet
 from transformers import CLIPTextModel, CLIPTokenizer
@@ -32,13 +32,15 @@ def main(args):
             sample_per_seq=sample_per_seq, 
             path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
             target_size=target_size,
-            frameskip=8,
+            frameskip=cfg["frameskip"],
             randomcrop=True
         )
         valid_inds = [i for i in range(0, len(train_set), len(train_set)//valid_n)][:valid_n]
         valid_set = Subset(train_set, valid_inds)
 
-    unet = Unet()
+    unet = Unet(
+        action_channels=512
+    )
     new_unet = NewUnet()
 
     pretrained_model = "openai/clip-vit-base-patch32"
@@ -123,6 +125,16 @@ def main(args):
         n_head = 4
     )
 
+    diffusion_action_model_gpt2 = DiffusionActionModelWithGPT2(
+        diffusion,
+        action_decoder,
+        condition_model,
+        action_rate = cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer = 12,
+        n_head = 4,
+        img_len = 1
+    )
+
     # trainer = Trainer(
     #     diffusion_action_model=diffusion_action_model11,
     #     tokenizer=tokenizer, 
@@ -144,7 +156,7 @@ def main(args):
     # )
 
     trainer = Trainer(
-        diffusion_action_model=diffusion_action_model_gpt,
+        diffusion_action_model=diffusion_action_model_gpt2,
         tokenizer=tokenizer, 
         text_encoder=text_encoder,
         train_set=train_set,

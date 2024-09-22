@@ -41,7 +41,7 @@ models:
   action_decoder:
     model_name: "PretrainDecoder"
     params:
-      dir: "../results12/pretrain/true-cosmos-49"
+      dir: "../results12/pretrain/lyric-glade-51"
       device: "cuda"
   preprocess:
     model_name: "Preprocess"
@@ -51,8 +51,10 @@ models:
       n_latent_dims: 512
   diffusion_action_model:
     params:
-      action_rate: 0.5
+      action_rate: 0.01
 
 trainer:
-  results_folder: '../result_gpt/mw'
+  results_folder: '../result_gpt2_frameskip4_001/mw'
   train_batch_size: 3
+
+frameskip: 4
