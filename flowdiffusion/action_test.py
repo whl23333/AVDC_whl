@@ -5,7 +5,7 @@ import random
 from pathlib import Path
 import numpy as np
 import tqdm
-from omegaconf import OmegaConf
+# from omegaconf import OmegaConf
 from vqvae.vqvae import VqVae
 import wandb
 from datasets import SequentialDatasetv2, SequentialDatasetv2SameInterval
@@ -48,7 +48,7 @@ def main(cfg):
     
     train_set = SequentialDatasetv2SameInterval(
             sample_per_seq=cfg["sample_per_seq"], 
-            path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
+            path="/home/yyang-infobai/metaworld", 
             target_size=(128, 128),
             frameskip=cfg["frameskip"],
             randomcrop=True

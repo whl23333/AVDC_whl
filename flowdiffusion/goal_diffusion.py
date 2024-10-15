@@ -38,7 +38,7 @@ import os
 
 from pynvml import *
 
-from vector_quantize_pytorch import ResidualVQ
+from vector_quantize_pytorch import ResidualVQ, VectorQuantize
 import yaml
 from vqvae.vqvae import EncoderMLP
 import einops
@@ -1187,7 +1187,32 @@ class PretrainDecoder(nn.Module):
         z_vq = z_flat.view(*z_shape, -1)
         dec_out = self.decoder(z + (z_vq - z).detach())
         return dec_out
+
+class VQDecoder(nn.Module):
+    def __init__(self, dir = "results", device = "cuda"):
+        super(VQDecoder, self).__init__()
+        current_dir = os.path.dirname(__file__)
+        config_path = os.path.join(current_dir, '../configs/config.yaml')
+        with open(config_path, "r") as file:
+            cfg = yaml.safe_load(file)
+        dir = os.path.join(current_dir, dir)
+        data = torch.load(os.path.join(dir, 'trained_vqvae.pt'), map_location=device)
+        self.n_latent_dims = cfg["vqvae"]["n_latent_dims"]
+        if cfg["vqvae"]["action_window_size"] == 1:
+            self.decoder = EncoderMLP(
+                input_dim=cfg["vqvae"]["n_latent_dims"], output_dim=cfg["vqvae"]["act_dim"]
+            ).to(device)
+        else:
+            self.decoder = EncoderMLP(
+                input_dim=cfg["vqvae"]["n_latent_dims"], output_dim=cfg["vqvae"]["act_dim"] * cfg["vqvae"]["action_window_size"]
+            ).to(device)
+        self.decoder.load_state_dict(data["decoder"])
+    def forward(self, z):
+        assert z.shape[1] == self.n_latent_dims, "the dim of z must be equal to PretrainDecoder's n_latent_dims"
+        dec_out = self.decoder(z) #z + (z_vq - z).detach() shape[batch, 512]
+        return dec_out
         
+                
 class SimpleActionDecoder(nn.Module):
     def __init__(self, action_dim, hidden_dim):
         super(SimpleActionDecoder, self).__init__()
@@ -1465,11 +1490,500 @@ class DiffusionActionModelWithGPT2(nn.Module):
         assert self.img_len == img_input.shape[1]
         stacked_input = torch.cat([task_embed, img_input], dim = 1)
         output = self.gpt_model(inputs_embeds = stacked_input)
-        z = output["last_hidden_state"][:, self.img_len, :]
+        z = output["last_hidden_state"][:, self.img_len:, :]
         self.batch_norm.eval()
         z = self.batch_norm(z.permute(0,2,1))
         z = z.permute(0,2,1)
         condition = self.condition_model(z)
+        return self.goal_gaussian_diffusion.sample(x_cond, condition, batch_size, return_all_timesteps, guidance_weight)
+
+class DiffusionActionModelWithGPT3(nn.Module):
+    def __init__(
+        self,
+        goal_gaussian_diffusion,
+        action_decoder,
+        condition_model,
+        action_rate = 0.5,
+        action_loss_type = "l2",
+        action_features = 512,
+        action_scale = 10.0,
+        n_layer = 12,
+        n_head = 4,
+        img_len = 1,
+        dir = "results",
+        device = "cuda"
+    ):
+        super().__init__()
+        self.action_features = action_features
+        self.goal_gaussian_diffusion = goal_gaussian_diffusion
+        self.action_decoder = action_decoder
+        self.condition_model = condition_model
+        self.action_rate = action_rate
+        self.action_loss_type = action_loss_type
+        self.batch_norm = torch.nn.BatchNorm1d(
+            num_features = action_features
+        )
+        self.batch_norm2 = torch.nn.BatchNorm1d(
+            num_features = action_features
+        )
+        self.action_scale = action_scale
+        self.img_encoder = Encoder(
+            hidden_size = action_features,
+            activation_function = "relu",
+            ch = 3,
+            robot = False
+        )
+        self.gpt_config = GPT2Config(
+            vocab_size = 1,
+            n_embd = action_features,
+            n_layer = n_layer,
+            n_head = n_head
+        )
+        self.gpt_model = GPT2Model(self.gpt_config)
+        self.img_len = img_len
+        current_dir = os.path.dirname(__file__)
+        config_path = os.path.join(current_dir, '../configs/config.yaml')
+        with open(config_path, "r") as file:
+            cfg = yaml.safe_load(file)
+        dir = os.path.join(current_dir, dir)
+        data = torch.load(os.path.join(dir, 'trained_vqvae.pt'), map_location=device)
+        self.n_latent_dims = cfg["vqvae"]["n_latent_dims"]
+        self.vq_layer = ResidualVQ(
+            dim=cfg["vqvae"]["n_latent_dims"],
+            num_quantizers=cfg["vqvae"]["vqvae_groups"],
+            codebook_size=cfg["vqvae"]["vqvae_n_embed"],
+        ).to(device)
+        self.vq_layer.load_state_dict(data["vq_embedding"])
+        self.vq_layer.requires_grad_(False)
+        self.vq_layer.eval()
+        self.task_attnpool = nn.Sequential(
+                PerceiverResampler(dim=action_features, depth=2), # PerceiverResampler(dim = 512, depth = 2)
+                nn.Linear(action_features, action_features),
+            )
+
+
+    def forward(self, img, img_cond, task_embed, action):
+        
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(img_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        stacked_input = torch.cat([task_embed, img_input], dim = 1)
+        output = self.gpt_model(inputs_embeds = stacked_input)
+        z = output["last_hidden_state"][:, self.img_len:, :] #z[batch, text_len, hidden_dim]
+        z = self.batch_norm(z.permute(0,2,1))
+        z = z.permute(0,2,1)
+        latent_emb = self.task_attnpool(z).mean(dim=1)
+        latent_emb = self.batch_norm2(latent_emb)
+        latent_shape = latent_emb.shape[:-1]
+        latent_flat = latent_emb.view(latent_emb.size(0), -1, latent_emb.size(1))
+        latent_flat, vq_code, vq_loss_state = self.vq_layer(latent_flat)
+        latent_vq = latent_flat.view(*latent_shape, -1)
+        action_predict = self.action_decoder(latent_emb + (latent_vq - latent_emb).detach()) 
+        # action_predict = self.action_decoder(latent_vq) 
+        # print("action_predict:",action_predict)
+        # print("action:", action)
+        action = action / self.action_scale
+        action = einops.rearrange(action, "N T A -> N (T A)")
+        # if self.action_loss_type == 'l1':
+        #     loss1 = F.l1_loss(action_predict, action)
+        # elif self.action_loss_type == 'l2':
+        #     loss1 = F.mse_loss(action_predict, action)
+        # elif self.action_loss_type == "huber":
+        #     loss1 = F.smooth_l1_loss(action_predict, action)
+        # else:
+        #     raise NotImplementedError()
+        loss1 = (action - action_predict).abs().mean()
+        condition = self.condition_model(latent_vq)
+        loss2 = self.goal_gaussian_diffusion(img, img_cond, (latent_emb + (condition - latent_emb).detach()))
+        # loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2
+        return loss, loss1, loss2
+    
+    @torch.no_grad()
+    def sample(self, x_cond, task_embed, batch_size = 16, return_all_timesteps = False, guidance_weight=0):
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(x_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        stacked_input = torch.cat([task_embed, img_input], dim = 1)
+        output = self.gpt_model(inputs_embeds = stacked_input)
+        z = output["last_hidden_state"][:, self.img_len:, :]
+        self.batch_norm.eval()
+        z = self.batch_norm(z.permute(0,2,1))
+        z = z.permute(0,2,1)
+        latent_emb = self.task_attnpool(z).mean(dim=1)
+        self.batch_norm2.eval()
+        latent_emb = self.batch_norm2(latent_emb)
+        latent_shape = latent_emb.shape[:-1]
+        latent_flat = latent_emb.view(latent_emb.size(0), -1, latent_emb.size(1))
+        latent_flat, vq_code, vq_loss_state = self.vq_layer(latent_flat)
+        latent_vq = latent_flat.view(*latent_shape, -1)
+        condition = self.condition_model(latent_vq)
+        return self.goal_gaussian_diffusion.sample(x_cond, condition, batch_size, return_all_timesteps, guidance_weight)
+
+class DiffusionActionModelWithGPT4(nn.Module):
+    def __init__(
+        self,
+        goal_gaussian_diffusion,
+        action_decoder,
+        condition_model,
+        action_rate = 0.5,
+        action_loss_type = "l2",
+        action_features = 512,
+        action_scale = 10.0,
+        n_layer = 12,
+        n_head = 4,
+        img_len = 1,
+        dir = "results",
+        device = "cuda",
+        commit_rate = 0.5
+    ):
+        super().__init__()
+        self.action_features = action_features
+        self.goal_gaussian_diffusion = goal_gaussian_diffusion
+        self.action_decoder = action_decoder
+        self.condition_model = condition_model
+        self.action_rate = action_rate
+        self.action_loss_type = action_loss_type
+        self.action_scale = action_scale
+        self.commit_rate=commit_rate
+        self.img_encoder = Encoder(
+            hidden_size = action_features,
+            activation_function = "relu",
+            ch = 3,
+            robot = False
+        )
+        self.gpt_config = GPT2Config(
+            vocab_size = 1,
+            n_embd = action_features,
+            n_layer = n_layer,
+            n_head = n_head
+        )
+        self.gpt_model = GPT2Model(self.gpt_config)
+        self.img_len = img_len
+        current_dir = os.path.dirname(__file__)
+        config_path = os.path.join(current_dir, '../configs/config.yaml')
+        with open(config_path, "r") as file:
+            cfg = yaml.safe_load(file)
+        dir = os.path.join(current_dir, dir)
+        
+        self.vq=VectorQuantize(
+            dim=512,
+            codebook_dim=16,
+            codebook_size=20,
+            decay=0.99,
+            commitment_weight=0.25,
+            kmeans_init=True,
+            use_cosine_sim=False
+        ).to(device)
+        self.task_attnpool = nn.Sequential(
+                PerceiverResampler(dim=action_features, depth=2), # PerceiverResampler(dim = 512, depth = 2)
+                nn.Linear(action_features, action_features),
+            )
+
+
+    def forward(self, img, img_cond, task_embed, action):
+        
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(img_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        stacked_input = torch.cat([task_embed, img_input], dim = 1)
+        output = self.gpt_model(inputs_embeds = stacked_input)
+        z = output["last_hidden_state"][:, -1, :] #z[batch, text_len, hidden_dim]
+        latent_emb = z
+        latent_shape = latent_emb.shape[:-1]
+        latent_flat = latent_emb.view(latent_emb.size(0), -1, latent_emb.size(1))
+        latent_flat, vq_code, vq_loss_state = self.vq(latent_flat)
+        latent_vq = latent_flat.view(*latent_shape, -1)
+        
+        
+        
+        latent_vq=latent_emb + (latent_vq - latent_emb).detach()
+        action_predict = self.action_decoder(latent_vq) 
+        # action_predict = self.action_decoder(latent_vq) 
+        # print("action_predict:",action_predict)
+        # print("action:", action)
+        action = action / self.action_scale
+        action = einops.rearrange(action, "N T A -> N (T A)")
+        # if self.action_loss_type == 'l1':
+        #     loss1 = F.l1_loss(action_predict, action)
+        # elif self.action_loss_type == 'l2':
+        #     loss1 = F.mse_loss(action_predict, action)
+        # elif self.action_loss_type == "huber":
+        #     loss1 = F.smooth_l1_loss(action_predict, action)
+        # else:
+        #     raise NotImplementedError()
+        loss1 = (action - action_predict).abs().mean()
+        condition = self.condition_model(latent_vq)
+        loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        # loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2 + self.commit_rate*vq_loss_state
+        
+        return loss, loss1, loss2
+    
+    @torch.no_grad()
+    def sample(self, x_cond, task_embed, batch_size = 16, return_all_timesteps = False, guidance_weight=0):
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(x_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        stacked_input = torch.cat([task_embed, img_input], dim = 1)
+        output = self.gpt_model(inputs_embeds = stacked_input)
+        z = output["last_hidden_state"][:, -1, :]
+        
+        latent_emb = z
+        latent_shape = latent_emb.shape[:-1]
+        latent_flat = latent_emb.view(latent_emb.size(0), -1, latent_emb.size(1))
+        latent_flat, vq_code, vq_loss_state = self.vq(latent_flat)
+        latent_vq = latent_flat.view(*latent_shape, -1)
+        
+        
+        latent_vq=latent_emb + (latent_vq - latent_emb).detach()
+        condition = self.condition_model(latent_vq)
+        return self.goal_gaussian_diffusion.sample(x_cond, condition, batch_size, return_all_timesteps, guidance_weight)
+
+class DiffusionActionModelWithGPT5(nn.Module):
+    def __init__(
+        self,
+        goal_gaussian_diffusion,
+        action_decoder,
+        condition_model,
+        action_rate = 0.5,
+        action_loss_type = "l2",
+        action_features = 512,
+        action_scale = 10.0,
+        n_layer = 12,
+        n_head = 4,
+        img_len = 1,
+        dir = "results",
+        device = "cuda",
+        commit_rate = 0.5
+    ):
+        super().__init__()
+        self.action_features = action_features
+        self.goal_gaussian_diffusion = goal_gaussian_diffusion
+        self.action_decoder = action_decoder
+        self.condition_model = condition_model
+        self.action_rate = action_rate
+        self.action_loss_type = action_loss_type
+        self.action_scale = action_scale
+        self.commit_rate=commit_rate
+        self.img_encoder = Encoder(
+            hidden_size = action_features,
+            activation_function = "relu",
+            ch = 3,
+            robot = False
+        )
+        self.gpt_config = GPT2Config(
+            vocab_size = 1,
+            n_embd = action_features,
+            n_layer = n_layer,
+            n_head = n_head
+        )
+        self.gpt_model = GPT2Model(self.gpt_config)
+        self.img_len = img_len
+        current_dir = os.path.dirname(__file__)
+        config_path = os.path.join(current_dir, '../configs/config.yaml')
+        with open(config_path, "r") as file:
+            cfg = yaml.safe_load(file)
+        dir = os.path.join(current_dir, dir)
+        
+        self.vq=VectorQuantize(
+            dim=512,
+            codebook_dim=16,
+            codebook_size=20,
+            decay=0.99,
+            commitment_weight=0.25,
+            kmeans_init=True,
+            use_cosine_sim=False
+        )
+
+
+    def forward(self, img, img_cond, task_embed, action):
+        
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(img_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        stacked_input = torch.cat([img_input, task_embed], dim = 1)
+        output = self.gpt_model(inputs_embeds = stacked_input)
+        z = output["last_hidden_state"][:, self.img_len:, :] #z[batch, text_len, hidden_dim]
+        # output = self.gpt_model(inputs_embeds=task_embed)
+        # z=output["last_hidden_state"]
+        
+        latent_emb = z
+        
+        
+        
+        latent_vq, vq_code, vq_loss_state = self.vq(latent_emb)
+
+        
+        latent_vq=latent_emb + (latent_vq - latent_emb).detach()
+        action_predict = self.action_decoder(latent_vq[:, -1, :]) 
+        # action_predict = self.action_decoder(latent_vq) 
+        # print("action_predict:",action_predict)
+        # print("action:", action)
+        action = action / self.action_scale
+        action = einops.rearrange(action, "N T A -> N (T A)")
+        # if self.action_loss_type == 'l1':
+        #     loss1 = F.l1_loss(action_predict, action)
+        # elif self.action_loss_type == 'l2':
+        #     loss1 = F.mse_loss(action_predict, action)
+        # elif self.action_loss_type == "huber":
+        #     loss1 = F.smooth_l1_loss(action_predict, action)
+        # else:
+        #     raise NotImplementedError()
+        loss1 = (action - action_predict).abs().mean()
+        condition = self.condition_model(latent_vq)
+        loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        # loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2 + self.commit_rate*vq_loss_state
+        
+        return loss, loss1, loss2
+    
+    @torch.no_grad()
+    def sample(self, x_cond, task_embed, batch_size = 16, return_all_timesteps = False, guidance_weight=0):
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(x_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        stacked_input = torch.cat([img_input, task_embed], dim = 1)
+        output = self.gpt_model(inputs_embeds = stacked_input)
+        z = output["last_hidden_state"][:, self.img_len:, :]
+        latent_emb = z
+        
+        latent_vq, vq_code, vq_loss_state = self.vq(latent_emb)
+        
+        latent_vq=latent_emb + (latent_vq - latent_emb).detach()
+        condition = self.condition_model(latent_vq)
+        return self.goal_gaussian_diffusion.sample(x_cond, condition, batch_size, return_all_timesteps, guidance_weight)
+
+class DiffusionActionModelWithGPT6(nn.Module):
+    def __init__(
+        self,
+        goal_gaussian_diffusion,
+        action_decoder,
+        condition_model,
+        action_rate = 0.5,
+        action_loss_type = "l2",
+        action_features = 512,
+        action_scale = 10.0,
+        n_layer = 12,
+        n_head = 4,
+        img_len = 1,
+        dir = "results",
+        device = "cuda",
+        commit_rate = 0.5
+    ):
+        super().__init__()
+        self.action_features = action_features
+        self.goal_gaussian_diffusion = goal_gaussian_diffusion
+        self.action_decoder = action_decoder
+        self.condition_model = condition_model
+        self.action_rate = action_rate
+        self.action_loss_type = action_loss_type
+        self.action_scale = action_scale
+        self.commit_rate=commit_rate
+        self.img_encoder = Encoder(
+            hidden_size = action_features,
+            activation_function = "relu",
+            ch = 3,
+            robot = False
+        )
+        self.gpt_config = GPT2Config(
+            vocab_size = 1,
+            n_embd = action_features,
+            n_layer = n_layer,
+            n_head = n_head
+        )
+        self.gpt_model = GPT2Model(self.gpt_config)
+        self.img_len = img_len
+        current_dir = os.path.dirname(__file__)
+        config_path = os.path.join(current_dir, '../configs/config.yaml')
+        with open(config_path, "r") as file:
+            cfg = yaml.safe_load(file)
+        dir = os.path.join(current_dir, dir)
+        
+        self.vq=VectorQuantize(
+            dim=512,
+            codebook_dim=16,
+            codebook_size=20,
+            decay=0.99,
+            commitment_weight=0.25,
+            kmeans_init=True,
+            use_cosine_sim=False
+        )
+
+
+    def forward(self, img, img_cond, task_embed, action):
+        
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(img_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        # stacked_input = torch.cat([task_embed, img_input], dim = 1)
+        # output = self.gpt_model(inputs_embeds = stacked_input)
+        # z = output["last_hidden_state"][:, self.img_len:, :] #z[batch, text_len, hidden_dim]
+        z = task_embed
+        latent_emb = z
+        
+        
+        
+        # latent_vq, vq_code, vq_loss_state = self.vq(latent_emb)
+
+        
+        # latent_vq=latent_emb + (latent_vq - latent_emb).detach()
+        latent_vq = latent_emb
+        action_predict = self.action_decoder(latent_vq[:, -1, :]) 
+        # action_predict = self.action_decoder(latent_vq) 
+        # print("action_predict:",action_predict)
+        # print("action:", action)
+        action = action / self.action_scale
+        action = einops.rearrange(action, "N T A -> N (T A)")
+        # if self.action_loss_type == 'l1':
+        #     loss1 = F.l1_loss(action_predict, action)
+        # elif self.action_loss_type == 'l2':
+        #     loss1 = F.mse_loss(action_predict, action)
+        # elif self.action_loss_type == "huber":
+        #     loss1 = F.smooth_l1_loss(action_predict, action)
+        # else:
+        #     raise NotImplementedError()
+        loss1 = (action - action_predict).abs().mean()
+        condition = self.condition_model(latent_vq)
+        loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        # loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        # loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2 + self.commit_rate*vq_loss_state
+        loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2
+        
+        return loss, loss1, loss2
+    
+    @torch.no_grad()
+    def sample(self, x_cond, task_embed, batch_size = 16, return_all_timesteps = False, guidance_weight=0):
+        assert  self.action_features == task_embed.shape[-1], "action_features must be equal to task_embed"
+        img_input = self.img_encoder(x_cond)
+        if len(img_input.shape)<3:
+            img_input = torch.unsqueeze(img_input, dim = 1)
+        assert self.img_len == img_input.shape[1]
+        # stacked_input = torch.cat([task_embed, img_input], dim = 1)
+        # output = self.gpt_model(inputs_embeds = stacked_input)
+        # z = output["last_hidden_state"][:, self.img_len:, :]
+        z = task_embed
+        latent_emb = z
+        
+        # latent_vq, vq_code, vq_loss_state = self.vq(latent_emb)
+        
+        # latent_vq=latent_emb + (latent_vq - latent_emb).detach()
+        latent_vq = latent_emb
+        condition = self.condition_model(latent_vq)
         return self.goal_gaussian_diffusion.sample(x_cond, condition, batch_size, return_all_timesteps, guidance_weight)
 
 # trainer class
@@ -1718,7 +2232,7 @@ class Trainer(object):
                 model = self.accelerator.unwrap_model(self.model)
                 # params = []
                 # names = []
-                # for name, param in model.implicit_model.named_parameters():
+                # for name, param in model.gpt_model.named_parameters():
                 #     params.append(param.grad)
                 #     names.append(name)
                 # print(params)

@@ -1,8 +1,10 @@
 from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder, DiffusionActionModelWithGPT, DiffusionActionModelWithGPT2
+from goal_diffusion import DiffusionActionModelWithGPT3, VQDecoder, DiffusionActionModelWithGPT4, DiffusionActionModelWithGPT5, DiffusionActionModelWithGPT6
 from unet import UnetMW as Unet
 from unet import NewUnetMW as NewUnet
+from unet import UnetMWOriginal as UnetOriginal
 from transformers import CLIPTextModel, CLIPTokenizer
-from datasets import SequentialDatasetv2, SequentialDatasetv2SameInterval
+from datasets import SequentialDatasetv2, SequentialDatasetv2SameInterval, SequentialDatasetv2Skill
 from torch.utils.data import Subset
 import argparse
 from ImgTextPerceiver import ImgTextPerceiverModel, ConvImgTextPerceiverModel, TwoStagePerceiverModel
@@ -10,6 +12,7 @@ from torchvision import utils
 import os
 import yaml
 def main(args):
+    import torch
     current_dir = os.path.dirname(__file__)
     config_path = os.path.join(current_dir, '../configs/config.yaml')
     with open(config_path, "r") as file:
@@ -30,11 +33,18 @@ def main(args):
 
         train_set = SequentialDatasetv2SameInterval(
             sample_per_seq=sample_per_seq, 
-            path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
+            path="/home/yyang-infobai/metaworld", 
             target_size=target_size,
             frameskip=cfg["frameskip"],
             randomcrop=True
         )
+        # train_set = SequentialDatasetv2Skill(
+        #     sample_per_seq=sample_per_seq, 
+        #     path="/home/yyang-infobai/metaworld", 
+        #     target_size=target_size,
+        #     frameskip=cfg["frameskip"],
+        #     randomcrop=True
+        # )
         valid_inds = [i for i in range(0, len(train_set), len(train_set)//valid_n)][:valid_n]
         valid_set = Subset(train_set, valid_inds)
 
@@ -42,7 +52,7 @@ def main(args):
         action_channels=512
     )
     new_unet = NewUnet()
-
+    unet_original = UnetOriginal()
     pretrained_model = "openai/clip-vit-base-patch32"
     tokenizer = CLIPTokenizer.from_pretrained(pretrained_model)
     text_encoder = CLIPTextModel.from_pretrained(pretrained_model)
@@ -73,6 +83,19 @@ def main(args):
         beta_schedule = 'cosine',
         min_snr_loss_weight = True,
     )
+    
+    diffusion_original = GoalGaussianDiffusion(
+        channels=3*(sample_per_seq-1),
+        model=unet_original,
+        image_size=target_size,
+        timesteps=100,
+        sampling_timesteps=args.sample_steps,
+        loss_type='l2',
+        objective='pred_v',
+        beta_schedule = 'cosine',
+        min_snr_loss_weight = True,
+    )
+    
     # implicit_model
     model_name = cfg["models"]["implicit_model"]["model_name"]
     model_params = cfg["models"]["implicit_model"]["params"]
@@ -134,6 +157,57 @@ def main(args):
         n_head = 4,
         img_len = 1
     )
+    
+    diffusion_action_model_gpt3 = DiffusionActionModelWithGPT3(
+        diffusion_new,
+        action_decoder,
+        condition_model,
+        action_rate= cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer=12,
+        n_head=4,
+        img_len=1,
+        dir=cfg["models"]["action_decoder"]["params"]["dir"],
+        device=cfg["models"]["action_decoder"]["params"]["device"]
+    )
+    
+    diffusion_action_model_gpt4 = DiffusionActionModelWithGPT4(
+        diffusion_new,
+        action_decoder,
+        condition_model,
+        action_rate= cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer=12,
+        n_head=4,
+        img_len=1,
+        dir=cfg["models"]["action_decoder"]["params"]["dir"],
+        device=cfg["models"]["action_decoder"]["params"]["device"],
+        commit_rate=0.5
+    )
+
+    diffusion_action_model_gpt5 = DiffusionActionModelWithGPT5(
+        diffusion_original,
+        action_decoder,
+        condition_model,
+        action_rate= cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer=12,
+        n_head=4,
+        img_len=1,
+        dir=cfg["models"]["action_decoder"]["params"]["dir"],
+        device=cfg["models"]["action_decoder"]["params"]["device"],
+        commit_rate=0.5
+    )
+    
+    diffusion_action_model_gpt6 = DiffusionActionModelWithGPT6(
+        diffusion_original,
+        action_decoder,
+        condition_model,
+        action_rate= cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer=12,
+        n_head=4,
+        img_len=1,
+        dir=cfg["models"]["action_decoder"]["params"]["dir"],
+        device=cfg["models"]["action_decoder"]["params"]["device"],
+        commit_rate=0.5
+    )
 
     # trainer = Trainer(
     #     diffusion_action_model=diffusion_action_model11,
@@ -156,13 +230,13 @@ def main(args):
     # )
 
     trainer = Trainer(
-        diffusion_action_model=diffusion_action_model_gpt2,
+        diffusion_action_model=diffusion_action_model_gpt6,
         tokenizer=tokenizer, 
         text_encoder=text_encoder,
         train_set=train_set,
         valid_set=valid_set,
         train_lr=1e-4,
-        train_num_steps = 240000,
+        train_num_steps = 80000,
         save_and_sample_every = 10000,
         ema_update_every = 10,
         ema_decay = 0.999,
@@ -176,7 +250,7 @@ def main(args):
     )
 
     if args.checkpoint_num is not None:
-        trainer.load_resume(args.checkpoint_num) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        trainer.load(args.checkpoint_num) # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     if args.mode == 'train':
         trainer.train()
