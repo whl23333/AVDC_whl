@@ -1281,7 +1281,7 @@ class UNetModelOriginal(nn.Module):
 
         self.image_size = image_size
         self.in_channels = in_channels
-        self.model_channels = model_channels # self.model_channels=128
+        self.model_channels = model_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
         self.attention_resolutions = attention_resolutions
@@ -1297,7 +1297,7 @@ class UNetModelOriginal(nn.Module):
         self.num_heads_upsample = num_heads_upsample
 
         time_embed_dim = model_channels * 4
-        self.time_embed = nn.Sequential( # self.time_embed: 128 -> 4*128 -> 4*128
+        self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
             nn.SiLU(),
             linear(time_embed_dim, time_embed_dim),
@@ -1305,9 +1305,9 @@ class UNetModelOriginal(nn.Module):
 
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
-        if task_tokens: # self.task_attnpool: (batch, 512) -> 
+        if task_tokens:
             self.task_attnpool = nn.Sequential(
-                PerceiverResampler(dim=task_token_channels, depth=2), # PerceiverResampler(dim = 512, depth = 2)
+                PerceiverResampler(dim=task_token_channels, depth=2),
                 nn.Linear(task_token_channels, time_embed_dim),
             )
 
@@ -1479,20 +1479,20 @@ class UNetModelOriginal(nn.Module):
         ), "must specify y if and only if the model is class-conditional"
 
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels)) # timestep_embedding(timesteps, 128) -> (batch, 128) -> (batch, 512)
-        # emb.shape: (batch, 4*128)
+        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
         
-        if self.task_tokens: # 把t和task embed到一起
-            label_emb = self.task_attnpool(y).mean(dim=1) # label_emb: (batch, 512)
+        if self.task_tokens:
+            label_emb = self.task_attnpool(y).mean(dim=1)
             emb = emb + label_emb
 
 
         h = x.type(self.dtype)
         for module in self.input_blocks:
-            h = module(h, emb) #如果把emb的形状从（batch, 512）改成（batch, 8, 512）
+            h = module(h, emb)
             hs.append(h)
         h = self.middle_block(h, emb)
         for module in self.output_blocks:

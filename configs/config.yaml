@@ -55,6 +55,5 @@ models:
 
 trainer:
   results_folder: '../result_gpt6_frameskipVar_000/mw'
-  train_batch_size: 12
-
+  train_batch_size: 6
 frameskip: 

@@ -1911,16 +1911,6 @@ class DiffusionActionModelWithGPT6(nn.Module):
         with open(config_path, "r") as file:
             cfg = yaml.safe_load(file)
         dir = os.path.join(current_dir, dir)
-        
-        self.vq=VectorQuantize(
-            dim=512,
-            codebook_dim=16,
-            codebook_size=20,
-            decay=0.99,
-            commitment_weight=0.25,
-            kmeans_init=True,
-            use_cosine_sim=False
-        )
 
 
     def forward(self, img, img_cond, task_embed, action):
@@ -1958,8 +1948,8 @@ class DiffusionActionModelWithGPT6(nn.Module):
         # else:
         #     raise NotImplementedError()
         loss1 = (action - action_predict).abs().mean()
-        condition = self.condition_model(latent_vq)
-        loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
+        vector = self.condition_model(latent_vq)
+        loss2 = self.goal_gaussian_diffusion(img, img_cond, vector)
         # loss2 = self.goal_gaussian_diffusion(img, img_cond, condition)
         # loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2 + self.commit_rate*vq_loss_state
         loss = self.action_rate*loss1 + (1 - self.action_rate)*loss2
@@ -1983,8 +1973,8 @@ class DiffusionActionModelWithGPT6(nn.Module):
         
         # latent_vq=latent_emb + (latent_vq - latent_emb).detach()
         latent_vq = latent_emb
-        condition = self.condition_model(latent_vq)
-        return self.goal_gaussian_diffusion.sample(x_cond, condition, batch_size, return_all_timesteps, guidance_weight)
+        vector = self.condition_model(latent_vq)
+        return self.goal_gaussian_diffusion.sample(x_cond, vector, batch_size, return_all_timesteps, guidance_weight)
 
 # trainer class
 
@@ -2085,7 +2075,8 @@ class Trainer(object):
 
         # optimizer
 
-        self.opt = Adam(filter(lambda p: p.requires_grad, diffusion_action_model.parameters()), lr = train_lr, betas = adam_betas, eps = 1e-4)
+        # self.opt = Adam(filter(lambda p: p.requires_grad, diffusion_action_model.parameters()), lr = train_lr, betas = adam_betas, eps = 1e-4)
+        self.opt = Adam(diffusion_action_model.parameters(), lr = train_lr, betas = adam_betas)
 
         # for logging results in a folder periodically
 

@@ -24,20 +24,21 @@ def main(args):
     if args.mode == 'inference':
         train_set = valid_set = [None] # dummy
     else:
-        # train_set = SequentialDatasetv2(
-        #     sample_per_seq=sample_per_seq, 
-        #     path="/media/disk3/WHL/flowdiffusion/datasets/metaworld", 
-        #     target_size=target_size,
-        #     randomcrop=True
-        # )
-
-        train_set = SequentialDatasetv2SameInterval(
+        train_set = SequentialDatasetv2(
             sample_per_seq=sample_per_seq, 
             path="/home/yyang-infobai/metaworld", 
             target_size=target_size,
             frameskip=cfg["frameskip"],
             randomcrop=True
         )
+
+        # train_set = SequentialDatasetv2SameInterval(
+        #     sample_per_seq=sample_per_seq, 
+        #     path="/home/yyang-infobai/metaworld", 
+        #     target_size=target_size,
+        #     frameskip=cfg["frameskip"],
+        #     randomcrop=True
+        # )
         # train_set = SequentialDatasetv2Skill(
         #     sample_per_seq=sample_per_seq, 
         #     path="/home/yyang-infobai/metaworld", 
@@ -53,7 +54,7 @@ def main(args):
     )
     new_unet = NewUnet()
     unet_original = UnetOriginal()
-    pretrained_model = "openai/clip-vit-base-patch32"
+    pretrained_model = "/home/yyang-infobai/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/e6a30b603a447e251fdaca1c3056b2a16cdfebeb"
     tokenizer = CLIPTokenizer.from_pretrained(pretrained_model)
     text_encoder = CLIPTextModel.from_pretrained(pretrained_model)
     text_encoder.requires_grad_(False)
@@ -236,7 +237,7 @@ def main(args):
         train_set=train_set,
         valid_set=valid_set,
         train_lr=1e-4,
-        train_num_steps = 80000,
+        train_num_steps = 90000,
         save_and_sample_every = 10000,
         ema_update_every = 10,
         ema_decay = 0.999,
