@@ -1,6 +1,7 @@
 wandb:
   wandb_project: "AVDC_change_pretrain"
   wandb_entity: "whl23333-tsinghua-university"
+  run_name: "faucetopen_fs12"
 
 save_path: "../results12/pretrain"
 gpt_save_path: "../results12/gpt"
@@ -8,7 +9,7 @@ seed: 42
 sample_per_seq: 8
 valid_n: 1
 batch_size: 64
-train_steps: 30000
+train_steps: 5000
 device: "cuda"
 
 vqvae: 
@@ -51,9 +52,14 @@ models:
       n_latent_dims: 512
   diffusion_action_model:
     params:
+      vq_dir: /home/yyang-infobai/AVDC_whl/results12/pretrain/faucetopen_fs4
+      load_vq: False
       action_rate: 0.00
+      finetune: True
 
 trainer:
-  results_folder: '../result_gpt6_frameskipVar_000/mw'
+  results_folder: '/home/yyang-infobai/AVDC_whl/result_lapa_frameskip4_000_faucetopen_finetune_b6_s42/mw'
   train_batch_size: 6
-frameskip: 
+frameskip: 4
+
+dataset: "/home/yyang-infobai/tasks_datasets/metaworld_faucetopen"

@@ -1,0 +1,177 @@
+2024-11-29 09:40:43,546 INFO    StreamThr :2721925 [internal.py:wandb_internal():85] W&B internal server running at pid: 2721925, started at: 2024-11-29 09:40:43.544596
+2024-11-29 09:40:43,547 DEBUG   HandlerThread:2721925 [handler.py:handle_request():158] handle_request: status
+2024-11-29 09:40:43,556 INFO    WriterThread:2721925 [datastore.py:open_for_write():87] open: /home/yyang-infobai/AVDC_whl/flowdiffusion/wandb/run-20241129_094043-nad2hfbc/run-nad2hfbc.wandb
+2024-11-29 09:40:43,557 DEBUG   SenderThread:2721925 [sender.py:send():391] send: header
+2024-11-29 09:40:43,579 DEBUG   SenderThread:2721925 [sender.py:send():391] send: run
+2024-11-29 09:40:47,039 INFO    SenderThread:2721925 [retry.py:__call__():172] Retry attempt failed:
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connection.py", line 196, in _new_conn
+    sock = connection.create_connection(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/socket.py", line 954, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connectionpool.py", line 775, in urlopen
+    self._prepare_proxy(conn)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connectionpool.py", line 1044, in _prepare_proxy
+    conn.connect()
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connection.py", line 615, in connect
+    self.sock = sock = self._new_conn()
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connection.py", line 203, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x7f5235d3a910>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+urllib3.exceptions.ProxyError: ('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3a910>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)"))
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connectionpool.py", line 843, in urlopen
+    retries = retries.increment(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.wandb.ai', port=443): Max retries exceeded with url: /graphql (Caused by ProxyError('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3a910>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)")))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/lib/retry.py", line 131, in __call__
+    result = self._call_fn(*args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 345, in execute
+    return self.client.execute(*args, **kwargs)  # type: ignore
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/vendor/gql-0.2.0/wandb_gql/client.py", line 52, in execute
+    result = self._get_result(document, *args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/vendor/gql-0.2.0/wandb_gql/client.py", line 60, in _get_result
+    return self.transport.execute(document, *args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/lib/gql_request.py", line 58, in execute
+    request = self.session.post(self.url, **post_args)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 637, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/adapters.py", line 694, in send
+    raise ProxyError(e, request=request)
+requests.exceptions.ProxyError: HTTPSConnectionPool(host='api.wandb.ai', port=443): Max retries exceeded with url: /graphql (Caused by ProxyError('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3a910>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)")))
+2024-11-29 09:40:48,580 DEBUG   HandlerThread:2721925 [handler.py:handle_request():158] handle_request: keepalive
+2024-11-29 09:40:51,493 DEBUG   HandlerThread:2721925 [handler.py:handle_request():158] handle_request: shutdown
+2024-11-29 09:40:51,493 INFO    HandlerThread:2721925 [handler.py:finish():882] shutting down handler
+2024-11-29 09:40:51,580 INFO    WriterThread:2721925 [datastore.py:close():296] close: /home/yyang-infobai/AVDC_whl/flowdiffusion/wandb/run-20241129_094043-nad2hfbc/run-nad2hfbc.wandb
+2024-12-06 09:44:50,449 ERROR   SenderThread:2721925 [sender.py:send_run():1021] HTTPSConnectionPool(host='api.wandb.ai', port=443): Max retries exceeded with url: /graphql (Caused by ProxyError('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3aac0>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)")))
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connection.py", line 196, in _new_conn
+    sock = connection.create_connection(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/socket.py", line 954, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connectionpool.py", line 775, in urlopen
+    self._prepare_proxy(conn)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connectionpool.py", line 1044, in _prepare_proxy
+    conn.connect()
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connection.py", line 615, in connect
+    self.sock = sock = self._new_conn()
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connection.py", line 203, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: <urllib3.connection.HTTPSConnection object at 0x7f5235d3aac0>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+urllib3.exceptions.ProxyError: ('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3aac0>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)"))
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/connectionpool.py", line 843, in urlopen
+    retries = retries.increment(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.wandb.ai', port=443): Max retries exceeded with url: /graphql (Caused by ProxyError('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3aac0>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)")))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/apis/normalize.py", line 41, in wrapper
+    return func(*args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 590, in server_settings_introspection
+    res = self.gql(query)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 317, in gql
+    ret = self._retry_gql(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/lib/retry.py", line 131, in __call__
+    result = self._call_fn(*args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 345, in execute
+    return self.client.execute(*args, **kwargs)  # type: ignore
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/vendor/gql-0.2.0/wandb_gql/client.py", line 52, in execute
+    result = self._get_result(document, *args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/vendor/gql-0.2.0/wandb_gql/client.py", line 60, in _get_result
+    return self.transport.execute(document, *args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/lib/gql_request.py", line 58, in execute
+    request = self.session.post(self.url, **post_args)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 637, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/adapters.py", line 694, in send
+    raise ProxyError(e, request=request)
+requests.exceptions.ProxyError: HTTPSConnectionPool(host='api.wandb.ai', port=443): Max retries exceeded with url: /graphql (Caused by ProxyError('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3aac0>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)")))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/sender.py", line 1019, in send_run
+    server_run = self._init_run(run, config_value_dict)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/sender.py", line 1091, in _init_run
+    server_run, inserted, server_messages = self._api.upsert_run(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/apis/normalize.py", line 73, in wrapper
+    raise err
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/apis/normalize.py", line 41, in wrapper
+    return func(*args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 2167, in upsert_run
+    self.server_settings_introspection()
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/apis/normalize.py", line 87, in wrapper
+    raise CommError(message, err).with_traceback(sys.exc_info()[2])
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/apis/normalize.py", line 41, in wrapper
+    return func(*args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 590, in server_settings_introspection
+    res = self.gql(query)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 317, in gql
+    ret = self._retry_gql(
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/lib/retry.py", line 131, in __call__
+    result = self._call_fn(*args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/internal/internal_api.py", line 345, in execute
+    return self.client.execute(*args, **kwargs)  # type: ignore
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/vendor/gql-0.2.0/wandb_gql/client.py", line 52, in execute
+    result = self._get_result(document, *args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/vendor/gql-0.2.0/wandb_gql/client.py", line 60, in _get_result
+    return self.transport.execute(document, *args, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/wandb/sdk/lib/gql_request.py", line 58, in execute
+    request = self.session.post(self.url, **post_args)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 637, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/group/ycyang/anaconda3/envs/avdc/lib/python3.9/site-packages/requests/adapters.py", line 694, in send
+    raise ProxyError(e, request=request)
+wandb.errors.CommError: HTTPSConnectionPool(host='api.wandb.ai', port=443): Max retries exceeded with url: /graphql (Caused by ProxyError('Unable to connect to proxy', NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f5235d3aac0>: Failed to resolve 'proxy-vlan448-a.cs.hku.hk' ([Errno -2] Name or service not known)")))
+2024-12-06 09:44:50,462 INFO    SenderThread:2721925 [sender.py:finish():1631] shutting down sender

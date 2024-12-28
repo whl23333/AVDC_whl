@@ -1,5 +1,5 @@
 from goal_diffusion import GoalGaussianDiffusion, Trainer, ActionDecoder, ConditionModel, Preprocess, DiffusionActionModel, SimpleActionDecoder, PretrainDecoder, DiffusionActionModelWithGPT, DiffusionActionModelWithGPT2
-from goal_diffusion import DiffusionActionModelWithGPT3, VQDecoder, DiffusionActionModelWithGPT4, DiffusionActionModelWithGPT5, DiffusionActionModelWithGPT6
+from goal_diffusion import DiffusionActionModelWithGPT3, VQDecoder, DiffusionActionModelWithGPT4, DiffusionActionModelWithGPT5, DiffusionActionModelWithGPT6, DiffusionActionModelLAPACodebook
 from unet import UnetMW as Unet
 from unet import NewUnetMW as NewUnet
 from unet import UnetMWOriginal as UnetOriginal
@@ -11,6 +11,19 @@ from ImgTextPerceiver import ImgTextPerceiverModel, ConvImgTextPerceiverModel, T
 from torchvision import utils
 import os
 import yaml
+
+import torch
+import random
+import numpy as np
+seed = 42
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 def main(args):
     import torch
     current_dir = os.path.dirname(__file__)
@@ -24,21 +37,21 @@ def main(args):
     if args.mode == 'inference':
         train_set = valid_set = [None] # dummy
     else:
-        train_set = SequentialDatasetv2(
-            sample_per_seq=sample_per_seq, 
-            path="/home/yyang-infobai/metaworld", 
-            target_size=target_size,
-            frameskip=cfg["frameskip"],
-            randomcrop=True
-        )
-
-        # train_set = SequentialDatasetv2SameInterval(
+        # train_set = SequentialDatasetv2(
         #     sample_per_seq=sample_per_seq, 
-        #     path="/home/yyang-infobai/metaworld", 
+        #     path=cfg["dataset"], 
         #     target_size=target_size,
         #     frameskip=cfg["frameskip"],
-        #     randomcrop=True
+        #     randomcrop=False
         # )
+
+        train_set = SequentialDatasetv2SameInterval(
+            sample_per_seq=sample_per_seq, 
+            path=cfg["dataset"], 
+            target_size=target_size,
+            frameskip=cfg["frameskip"],
+            randomcrop=False
+        )
         # train_set = SequentialDatasetv2Skill(
         #     sample_per_seq=sample_per_seq, 
         #     path="/home/yyang-infobai/metaworld", 
@@ -55,6 +68,7 @@ def main(args):
     new_unet = NewUnet()
     unet_original = UnetOriginal()
     pretrained_model = "/home/yyang-infobai/.cache/huggingface/hub/models--openai--clip-vit-base-patch32/snapshots/e6a30b603a447e251fdaca1c3056b2a16cdfebeb"
+    # pretrained_model = "openai/clip-vit-base-patch32"
     tokenizer = CLIPTokenizer.from_pretrained(pretrained_model)
     text_encoder = CLIPTextModel.from_pretrained(pretrained_model)
     text_encoder.requires_grad_(False)
@@ -194,7 +208,25 @@ def main(args):
         img_len=1,
         dir=cfg["models"]["action_decoder"]["params"]["dir"],
         device=cfg["models"]["action_decoder"]["params"]["device"],
-        commit_rate=0.5
+        commit_rate=0.5,
+        vq_dir=cfg["models"]["diffusion_action_model"]["params"]["vq_dir"],
+        load_vq=cfg["models"]["diffusion_action_model"]["params"]["load_vq"]
+    )
+    
+    diffusion_action_model_lapa = DiffusionActionModelLAPACodebook(
+        diffusion_new,
+        action_decoder,
+        condition_model,
+        action_rate= cfg["models"]["diffusion_action_model"]["params"]["action_rate"],
+        n_layer=12,
+        n_head=4,
+        img_len=1,
+        dir=cfg["models"]["action_decoder"]["params"]["dir"],
+        device=cfg["models"]["action_decoder"]["params"]["device"],
+        commit_rate=0.5,
+        vq_dir=cfg["models"]["diffusion_action_model"]["params"]["vq_dir"],
+        load_vq=cfg["models"]["diffusion_action_model"]["params"]["load_vq"],
+        finetune = cfg["models"]["diffusion_action_model"]["params"]["finetune"]
     )
     
     diffusion_action_model_gpt6 = DiffusionActionModelWithGPT6(
@@ -231,13 +263,13 @@ def main(args):
     # )
 
     trainer = Trainer(
-        diffusion_action_model=diffusion_action_model_gpt6,
+        diffusion_action_model=diffusion_action_model_lapa,
         tokenizer=tokenizer, 
         text_encoder=text_encoder,
         train_set=train_set,
         valid_set=valid_set,
         train_lr=1e-4,
-        train_num_steps = 90000,
+        train_num_steps = 20000,
         save_and_sample_every = 10000,
         ema_update_every = 10,
         ema_decay = 0.999,

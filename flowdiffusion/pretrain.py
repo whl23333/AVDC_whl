@@ -1,12 +1,12 @@
 import torch
-from vector_quantize_pytorch import ResidualVQ
+from vector_quantize_pytorch import ResidualVQ, VectorQuantize
 import os
 import random
 from pathlib import Path
 import numpy as np
 import tqdm
 # from omegaconf import OmegaConf
-from vqvae.vqvae import VqVae
+from vqvae.vqvae import VqVae, VqVae_VQ
 import wandb
 from datasets import SequentialDatasetv2, SequentialDatasetv2SameInterval
 from torch.utils.data import Subset
@@ -29,14 +29,15 @@ def main(cfg):
         project=cfg["wandb"]["wandb_project"],
         entity=cfg["wandb"]["wandb_entity"],
         config=cfg,
+        name=cfg["wandb"]["run_name"]
     )
-    run_name = run.name or "Offline"
+    # run_name = run.name or "Offline"
 
     current_dir = os.path.dirname(__file__)
     save_path = os.path.join(current_dir, cfg["save_path"]) 
-    save_path = Path(save_path)/run_name
+    save_path = Path(save_path)/cfg["wandb"]["run_name"]
     save_path.mkdir(parents=True, exist_ok = True)
-    vqvae_model = VqVae(
+    vqvae_model = VqVae_VQ(
         input_dim_h = cfg["vqvae"]["action_window_size"],
         input_dim_w = cfg["vqvae"]["act_dim"],
         n_latent_dims = cfg["vqvae"]["n_latent_dims"],
@@ -57,7 +58,7 @@ def main(cfg):
     
     train_set = SequentialDatasetv2SameInterval(
             sample_per_seq=cfg["sample_per_seq"], 
-            path="/home/yyang-infobai/metaworld", 
+            path=cfg["dataset"], 
             target_size=(128, 128),
             frameskip=cfg["frameskip"],
             randomcrop=True
@@ -81,13 +82,13 @@ def main(cfg):
             vq_code,
             vqvae_recon_loss,
         ) = vqvae_model.vqvae_update(action)  # N T D
-        wandb.log({"pretrain/n_different_codes": len(torch.unique(vq_code))})
-        wandb.log(
-            {"pretrain/n_different_combinations": len(torch.unique(vq_code, dim=0))}
-        )
-        wandb.log({"pretrain/encoder_loss": encoder_loss})
-        wandb.log({"pretrain/vq_loss_state": vq_loss_state})
-        wandb.log({"pretrain/vqvae_recon_loss": vqvae_recon_loss})
+        # wandb.log({"pretrain/n_different_codes": len(torch.unique(vq_code))})
+        # wandb.log(
+        #     {"pretrain/n_different_combinations": len(torch.unique(vq_code, dim=0))}
+        # )
+        # wandb.log({"pretrain/encoder_loss": encoder_loss})
+        # wandb.log({"pretrain/vq_loss_state": vq_loss_state})
+        # wandb.log({"pretrain/vqvae_recon_loss": vqvae_recon_loss})
         if i % 3000 == 0:
             state_dict = vqvae_model.state_dict()
             torch.save(state_dict, os.path.join(save_path, "trained_vqvae.pt"))
